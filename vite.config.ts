@@ -12,4 +12,7 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Vercel 배포용 nitro preset. Lovable 샌드박스에서는 자동으로 cloudflare-module 로
+  // 덮어쓰여지므로 기존 동작에 영향을 주지 않는다.
+  nitro: { preset: "vercel" },
 });

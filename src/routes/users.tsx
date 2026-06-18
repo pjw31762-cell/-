@@ -1,212 +1,171 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Check, X, Trash2, ShieldAlert } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { ConfirmModal } from "@/routes/settings";
 import { useAuth, type AccountStatus } from "@/lib/auth-context";
-import {
-  ShieldCheck,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Trash2,
-  UserCog,
-  Users,
-  ArrowLeft,
-} from "lucide-react";
 
 export const Route = createFileRoute("/users")({
-  head: () => ({
-    meta: [
-      { title: "사용자 승인 관리 · SatisAI" },
-      { name: "description", content: "관리자가 가입 신청한 사용자를 승인·관리합니다." },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "사용자 승인 관리 · SatisAI" }] }),
   component: UsersPage,
 });
 
-const STATUS_META: Record<AccountStatus, { label: string; cls: string; icon: typeof Clock }> = {
-  pending: { label: "승인 대기", cls: "bg-amber-100 text-amber-700", icon: Clock },
-  approved: { label: "승인됨", cls: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-  rejected: { label: "거부됨", cls: "bg-rose-100 text-rose-700", icon: XCircle },
+const FILTERS: { key: AccountStatus | "all"; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "pending", label: "승인 대기" },
+  { key: "approved", label: "승인됨" },
+  { key: "rejected", label: "거부됨" },
+];
+
+const STATUS_BADGE: Record<AccountStatus, { label: string; className: string }> = {
+  pending: { label: "승인 대기", className: "bg-amber-100 text-amber-700" },
+  approved: { label: "승인됨", className: "bg-emerald-100 text-emerald-700" },
+  rejected: { label: "거부됨", className: "bg-rose-100 text-rose-700" },
 };
 
-function fmt(ts: number) {
-  try {
-    return new Date(ts).toLocaleString("ko-KR", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
-
 function UsersPage() {
-  const { isAdmin, accounts, approveUser, rejectUser, deleteUser, currentUser } = useAuth();
-  const [filter, setFilter] = useState<"all" | AccountStatus>("all");
+  const { currentUser, accounts, approveAccount, rejectAccount, deleteAccount } = useAuth();
+  const [filter, setFilter] = useState<AccountStatus | "all">("all");
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
-  if (!isAdmin) {
+  if (currentUser?.role !== "admin") {
     return (
       <AppShell>
         <div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-10 text-center shadow-[var(--shadow-soft)]">
-          <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
-          <h2 className="mt-4 text-lg font-semibold">접근 권한이 없습니다</h2>
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <h1 className="mt-5 text-xl font-semibold">접근 권한이 없습니다</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            사용자 승인 관리는 관리자만 이용할 수 있습니다.
+            이 페이지는 관리자만 이용할 수 있습니다.
           </p>
-          <Link
-            to="/"
-            className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" /> 대시보드로 돌아가기
-          </Link>
         </div>
       </AppShell>
     );
   }
 
-  const pending = accounts.filter((a) => a.status === "pending");
-  const sorted = [...accounts].sort((a, b) => b.createdAt - a.createdAt);
-  const visible = filter === "all" ? sorted : sorted.filter((a) => a.status === filter);
+  const rows = useMemo(() => {
+    const list = filter === "all" ? accounts : accounts.filter((a) => a.status === filter);
+    return [...list].sort((a, b) => b.createdAt - a.createdAt);
+  }, [accounts, filter]);
 
-  const handleApprove = (id: string, name: string) => {
-    approveUser(id);
-    toast.success(`${name} 님을 승인했습니다.`);
-  };
-  const handleReject = (id: string, name: string) => {
-    rejectUser(id);
-    toast(`${name} 님의 접속을 거부했습니다.`);
-  };
-  const handleDelete = (id: string, name: string) => {
-    if (!confirm(`${name} 님의 계정을 삭제할까요? 되돌릴 수 없습니다.`)) return;
-    deleteUser(id);
-    toast(`${name} 님의 계정을 삭제했습니다.`);
-  };
+  const counts = useMemo(() => {
+    const c = { all: accounts.length, pending: 0, approved: 0, rejected: 0 };
+    for (const a of accounts) c[a.status]++;
+    return c;
+  }, [accounts]);
 
-  const counts = {
-    all: accounts.length,
-    pending: accounts.filter((a) => a.status === "pending").length,
-    approved: accounts.filter((a) => a.status === "approved").length,
-    rejected: accounts.filter((a) => a.status === "rejected").length,
-  };
+  const target = confirmId ? accounts.find((a) => a.id === confirmId) : null;
 
   return (
     <AppShell>
       <PageHeader
-        eyebrow="관리자"
+        eyebrow="Admin"
         title="사용자 승인 관리"
-        description="회원가입을 신청한 사용자를 승인하면 플랫폼에 접속할 수 있습니다."
+        description="가입한 사용자를 검토하고 승인 · 거부 · 삭제할 수 있습니다."
       />
 
-      {pending.length > 0 && (
-        <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <Clock className="h-4 w-4" />
-          승인 대기 중인 신청이 <b>{pending.length}건</b> 있습니다.
-        </div>
-      )}
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        {(["all", "pending", "approved", "rejected"] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setFilter(k)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === k
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card text-muted-foreground hover:bg-secondary"
-            }`}
-          >
-            {k === "all" ? "전체" : STATUS_META[k].label} ({counts[k]})
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          const n = counts[f.key as keyof typeof counts];
+          return (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-secondary"
+              }`}
+            >
+              {f.label}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-primary-foreground/20" : "bg-secondary"}`}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[var(--shadow-soft)]">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary/50 text-left text-xs text-muted-foreground">
-              <th className="px-4 py-3 font-medium">이름 / 이메일</th>
-              <th className="px-4 py-3 font-medium">소속</th>
-              <th className="px-4 py-3 font-medium">권한</th>
-              <th className="px-4 py-3 font-medium">상태</th>
-              <th className="px-4 py-3 font-medium">신청일</th>
+          <thead className="bg-secondary text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">이름 / 이메일</th>
+              <th className="px-4 py-3 text-left font-medium">소속 부서</th>
+              <th className="px-4 py-3 text-left font-medium">권한</th>
+              <th className="px-4 py-3 text-left font-medium">상태</th>
+              <th className="px-4 py-3 text-left font-medium">신청일</th>
               <th className="px-4 py-3 text-right font-medium">관리</th>
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 && (
+            {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                  <Users className="mx-auto mb-2 h-8 w-8 opacity-40" />
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   해당하는 사용자가 없습니다.
                 </td>
               </tr>
             )}
-            {visible.map((a) => {
-              const meta = STATUS_META[a.status];
-              const StatusIcon = meta.icon;
-              const isSelf = a.id === currentUser?.id;
+            {rows.map((a) => {
+              const badge = STATUS_BADGE[a.status];
+              const isSeed = a.email === "gangnamsenior@daum.net";
+              const isSelf = currentUser?.id === a.id;
               return (
-                <tr key={a.id} className="border-t border-border align-middle">
+                <tr key={a.id} className="border-t border-border">
                   <td className="px-4 py-3">
-                    <div className="font-medium">
-                      {a.name}
-                      {isSelf && <span className="ml-1 text-[11px] text-muted-foreground">(나)</span>}
-                    </div>
+                    <div className="font-medium">{a.name}</div>
                     <div className="text-xs text-muted-foreground">{a.email}</div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{a.dept}</td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        a.role === "admin" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {a.role === "admin" ? <UserCog className="h-3 w-3" /> : null}
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${a.role === "admin" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
                       {a.role === "admin" ? "관리자" : "사용자"}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.cls}`}
-                    >
-                      <StatusIcon className="h-3 w-3" /> {meta.label}
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>
+                      {badge.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{fmt(a.createdAt)}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {formatDate(a.createdAt)}
+                  </td>
                   <td className="px-4 py-3">
-                    {a.role === "admin" ? (
-                      <div className="text-right text-xs text-muted-foreground">—</div>
-                    ) : (
-                      <div className="flex items-center justify-end gap-1.5">
-                        {a.status !== "approved" && (
-                          <button
-                            onClick={() => handleApprove(a.id, a.name)}
-                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> 승인
-                          </button>
-                        )}
-                        {a.status !== "rejected" && (
-                          <button
-                            onClick={() => handleReject(a.id, a.name)}
-                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-secondary"
-                          >
-                            <XCircle className="h-3.5 w-3.5" /> 거부
-                          </button>
-                        )}
+                    <div className="flex justify-end gap-1.5">
+                      {a.status !== "approved" && (
                         <button
-                          onClick={() => handleDelete(a.id, a.name)}
-                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
-                          aria-label="삭제"
+                          onClick={() => {
+                            approveAccount(a.id);
+                            toast.success(`${a.name} 님을 승인했습니다.`);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Check className="h-3 w-3" /> 승인
                         </button>
-                      </div>
-                    )}
+                      )}
+                      {a.status !== "rejected" && !isSeed && (
+                        <button
+                          onClick={() => {
+                            rejectAccount(a.id);
+                            toast.success(`${a.name} 님을 거부했습니다.`);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                        >
+                          <X className="h-3 w-3" /> 거부
+                        </button>
+                      )}
+                      <button
+                        disabled={isSeed || isSelf}
+                        title={isSeed ? "기본 관리자 계정은 삭제할 수 없습니다" : isSelf ? "현재 로그인된 계정입니다" : undefined}
+                        onClick={() => setConfirmId(a.id)}
+                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3 w-3" /> 삭제
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -214,6 +173,30 @@ function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      {confirmId && target && (
+        <ConfirmModal
+          title={`${target.name} 님의 계정을 삭제할까요?`}
+          desc="삭제된 계정은 복구할 수 없습니다."
+          onCancel={() => setConfirmId(null)}
+          onConfirm={() => {
+            const r = deleteAccount(confirmId);
+            setConfirmId(null);
+            if (!r.ok) toast.error(r.error);
+            else toast.success("계정이 삭제되었습니다.");
+          }}
+        />
+      )}
     </AppShell>
   );
+}
+
+function formatDate(ts: number) {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}.${m}.${day} ${hh}:${mm}`;
 }

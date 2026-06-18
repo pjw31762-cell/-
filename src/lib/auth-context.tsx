@@ -5,68 +5,69 @@ export type Role = "admin" | "user";
 export type AccountStatus = "pending" | "approved" | "rejected";
 
 export type Account = {
-  id: string; // 이메일을 식별자로 사용
+  id: string;
   email: string;
   password: string;
+  name: string;
+  dept: Department;
   role: Role;
   status: AccountStatus;
-  dept: Department;
-  name: string;
   createdAt: number;
 };
 
 export type CurrentUser = {
-  id: string; // = email (설정 화면 호환용)
+  id: string;
   email: string;
+  name: string;
+  dept: Department;
   role: Role;
   status: AccountStatus;
-  dept: Department;
-  name: string;
 };
 
-const ACCOUNTS_KEY = "accounts.v2";
-const CURRENT_KEY = "currentUser.v2";
+const ACCOUNTS_KEY = "sws.accounts.v2";
+const CURRENT_KEY = "sws.currentUser.v2";
+const EVT = "sws:accounts-updated";
 
-// 관리자 계정 — 강남시니어플라자 만족도 자동화 플랫폼
-export const ADMIN_EMAIL = "gangnamsenior@daum.net";
-const ADMIN_DEFAULT_PASSWORD = "gangnam2026!";
+const ADMIN_EMAIL = "gangnamsenior@daum.net";
+const ADMIN_PASSWORD = "gangnam2026!";
 
-const DEFAULT_ACCOUNTS: Account[] = [
-  {
-    id: ADMIN_EMAIL,
-    email: ADMIN_EMAIL,
-    password: ADMIN_DEFAULT_PASSWORD,
-    role: "admin",
-    status: "approved",
-    dept: "평생교육팀",
-    name: "관리자",
-    createdAt: Date.now(),
-  },
-];
+const seedAdmin = (): Account => ({
+  id: "admin_seed",
+  email: ADMIN_EMAIL,
+  password: ADMIN_PASSWORD,
+  name: "관리자",
+  dept: "평생교육팀",
+  role: "admin",
+  status: "approved",
+  createdAt: Date.now(),
+});
 
-const norm = (s: string) => s.trim().toLowerCase();
-
-function writeAccounts(list: Account[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
-}
+const normalizeEmail = (e: string) => e.trim().toLowerCase();
+const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 function readAccounts(): Account[] {
-  if (typeof window === "undefined") return DEFAULT_ACCOUNTS;
+  if (typeof window === "undefined") return [seedAdmin()];
   try {
     const raw = localStorage.getItem(ACCOUNTS_KEY);
     if (raw) {
       const list = JSON.parse(raw) as Account[];
-      // 관리자 계정이 없으면 항상 보강
-      if (!list.some((a) => a.role === "admin")) {
-        list.push(DEFAULT_ACCOUNTS[0]);
-        writeAccounts(list);
+      // ensure built-in admin always exists
+      if (!list.some((a) => normalizeEmail(a.email) === ADMIN_EMAIL)) {
+        list.unshift(seedAdmin());
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
       }
       return list;
     }
   } catch {}
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
-  return DEFAULT_ACCOUNTS;
+  const seeded = [seedAdmin()];
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(seeded));
+  return seeded;
+}
+
+function writeAccounts(list: Account[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
+  window.dispatchEvent(new Event(EVT));
 }
 
 function readCurrent(): CurrentUser | null {
@@ -78,9 +79,14 @@ function readCurrent(): CurrentUser | null {
   return null;
 }
 
-function toCurrent(a: Account): CurrentUser {
-  return { id: a.email, email: a.email, role: a.role, status: a.status, dept: a.dept, name: a.name };
-}
+const toCurrentUser = (a: Account): CurrentUser => ({
+  id: a.id,
+  email: a.email,
+  name: a.name,
+  dept: a.dept,
+  role: a.role,
+  status: a.status,
+});
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -88,17 +94,19 @@ interface AuthContextValue {
   currentUser: CurrentUser | null;
   loading: boolean;
   displayName: string;
-  isAdmin: boolean;
   accounts: Account[];
-  pendingCount: number;
   signIn: (email: string, password: string) => Result;
-  signUp: (input: { email: string; password: string; name: string; dept: Department }) => Result;
+  signUp: (input: {
+    name: string;
+    email: string;
+    password: string;
+    dept: Department;
+  }) => Result;
   signOut: () => Promise<void>;
-  approveUser: (id: string) => void;
-  rejectUser: (id: string) => void;
-  deleteUser: (id: string) => void;
-  refreshAccounts: () => void;
   changePassword: (currentPw: string, newPw: string, confirmPw: string) => Result;
+  approveAccount: (id: string) => void;
+  rejectAccount: (id: string) => void;
+  deleteAccount: (id: string) => Result;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -108,73 +116,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refreshAccounts = () => setAccounts(readAccounts());
-
   useEffect(() => {
-    const list = readAccounts();
-    setAccounts(list);
+    setAccounts(readAccounts());
     const u = readCurrent();
     if (u) {
-      // 저장된 세션의 상태를 최신 계정 정보로 동기화
-      const fresh = list.find((a) => a.id === u.id);
-      if (fresh) {
-        const cu = toCurrent(fresh);
-        setCurrentUser(cu);
-        localStorage.setItem(CURRENT_KEY, JSON.stringify(cu));
-        settingsStore.update({ department: cu.dept });
-      } else {
-        localStorage.removeItem(CURRENT_KEY);
-      }
+      setCurrentUser(u);
+      if (u.dept) settingsStore.update({ department: u.dept });
     }
     setLoading(false);
+    const onUpd = () => setAccounts(readAccounts());
+    window.addEventListener(EVT, onUpd);
+    return () => window.removeEventListener(EVT, onUpd);
   }, []);
 
   const displayName = currentUser?.name || "사용자";
-  const isAdmin = currentUser?.role === "admin";
-  const pendingCount = accounts.filter((a) => a.status === "pending").length;
+
+  const persistAccounts = (list: Account[]) => {
+    writeAccounts(list);
+    setAccounts(list);
+    // If the currently logged-in user's record changed, refresh it
+    if (currentUser) {
+      const fresh = list.find((a) => a.id === currentUser.id);
+      if (fresh) {
+        const next = toCurrentUser(fresh);
+        localStorage.setItem(CURRENT_KEY, JSON.stringify(next));
+        setCurrentUser(next);
+      }
+    }
+  };
 
   const signIn: AuthContextValue["signIn"] = (email, password) => {
+    const e = normalizeEmail(email);
+    if (!isValidEmail(e)) return { ok: false, error: "이메일 형식이 올바르지 않습니다." };
     const list = readAccounts();
+    const match = list.find((a) => normalizeEmail(a.email) === e && a.password === password);
+    if (!match) return { ok: false, error: "이메일 또는 비밀번호가 올바르지 않습니다." };
+    const user = toCurrentUser(match);
+    localStorage.setItem(CURRENT_KEY, JSON.stringify(user));
+    if (user.dept) settingsStore.update({ department: user.dept });
+    setCurrentUser(user);
     setAccounts(list);
-    const match = list.find((a) => a.id === norm(email) && a.password === password);
-    if (!match) {
-      return { ok: false, error: "이메일 또는 비밀번호가 올바르지 않습니다." };
-    }
-    const cu = toCurrent(match);
-    localStorage.setItem(CURRENT_KEY, JSON.stringify(cu));
-    settingsStore.update({ department: cu.dept });
-    setCurrentUser(cu);
     return { ok: true };
   };
 
-  const signUp: AuthContextValue["signUp"] = ({ email, password, name, dept }) => {
-    const id = norm(email);
-    if (!id || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(id)) {
-      return { ok: false, error: "올바른 이메일 형식이 아닙니다." };
-    }
-    if (password.length < 4) {
-      return { ok: false, error: "비밀번호는 4자 이상이어야 합니다." };
-    }
-    if (!name.trim()) {
-      return { ok: false, error: "이름을 입력해주세요." };
-    }
+  const signUp: AuthContextValue["signUp"] = ({ name, email, password, dept }) => {
+    const e = normalizeEmail(email);
+    if (!name.trim()) return { ok: false, error: "이름을 입력해 주세요." };
+    if (!isValidEmail(e)) return { ok: false, error: "이메일 형식이 올바르지 않습니다." };
+    if (password.length < 4) return { ok: false, error: "비밀번호는 4자 이상이어야 합니다." };
+    if (!dept) return { ok: false, error: "소속 부서를 선택해 주세요." };
     const list = readAccounts();
-    if (list.some((a) => a.id === id)) {
-      return { ok: false, error: "이미 등록된 이메일입니다." };
+    if (list.some((a) => normalizeEmail(a.email) === e)) {
+      return { ok: false, error: "이미 가입된 이메일입니다." };
     }
-    const acc: Account = {
-      id,
-      email: id,
+    const next: Account = {
+      id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      email: e,
       password,
+      name: name.trim(),
+      dept,
       role: "user",
       status: "pending",
-      dept,
-      name: name.trim(),
       createdAt: Date.now(),
     };
-    const next = [...list, acc];
-    writeAccounts(next);
-    setAccounts(next);
+    persistAccounts([...list, next]);
     return { ok: true };
   };
 
@@ -183,51 +188,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   };
 
-  const mutate = (id: string, patch: Partial<Account>) => {
-    const list = readAccounts();
-    const next = list.map((a) => (a.id === id ? { ...a, ...patch } : a));
-    writeAccounts(next);
-    setAccounts(next);
-    // 현재 로그인한 사용자가 영향을 받으면 세션도 갱신
-    if (currentUser?.id === id) {
-      const fresh = next.find((a) => a.id === id);
-      if (fresh) {
-        const cu = toCurrent(fresh);
-        localStorage.setItem(CURRENT_KEY, JSON.stringify(cu));
-        setCurrentUser(cu);
-      }
-    }
-  };
-
-  const approveUser = (id: string) => mutate(id, { status: "approved" });
-  const rejectUser = (id: string) => mutate(id, { status: "rejected" });
-
-  const deleteUser = (id: string) => {
-    const list = readAccounts();
-    const target = list.find((a) => a.id === id);
-    if (target?.role === "admin") return; // 관리자 계정은 삭제 불가
-    const next = list.filter((a) => a.id !== id);
-    writeAccounts(next);
-    setAccounts(next);
-  };
-
   const changePassword: AuthContextValue["changePassword"] = (currentPw, newPw, confirmPw) => {
     if (!currentUser) return { ok: false, error: "로그인이 필요합니다." };
     const list = readAccounts();
     const idx = list.findIndex((a) => a.id === currentUser.id);
     if (idx < 0) return { ok: false, error: "계정을 찾을 수 없습니다." };
-    if (list[idx].password !== currentPw) {
-      return { ok: false, error: "현재 비밀번호가 올바르지 않습니다." };
+    if (list[idx].password !== currentPw) return { ok: false, error: "현재 비밀번호가 올바르지 않습니다." };
+    if (newPw.length < 4) return { ok: false, error: "비밀번호는 4자 이상이어야 합니다." };
+    if (newPw !== confirmPw) return { ok: false, error: "새 비밀번호가 일치하지 않습니다." };
+    const next = [...list];
+    next[idx] = { ...next[idx], password: newPw };
+    persistAccounts(next);
+    return { ok: true };
+  };
+
+  const setStatus = (id: string, status: AccountStatus) => {
+    const list = readAccounts();
+    const next = list.map((a) => (a.id === id ? { ...a, status } : a));
+    persistAccounts(next);
+  };
+
+  const approveAccount = (id: string) => setStatus(id, "approved");
+  const rejectAccount = (id: string) => setStatus(id, "rejected");
+
+  const deleteAccount: AuthContextValue["deleteAccount"] = (id) => {
+    const list = readAccounts();
+    const target = list.find((a) => a.id === id);
+    if (!target) return { ok: false, error: "계정을 찾을 수 없습니다." };
+    if (normalizeEmail(target.email) === ADMIN_EMAIL) {
+      return { ok: false, error: "기본 관리자 계정은 삭제할 수 없습니다." };
     }
-    if (newPw.length < 4) {
-      return { ok: false, error: "비밀번호는 4자 이상이어야 합니다." };
+    if (currentUser?.id === id) {
+      return { ok: false, error: "현재 로그인된 계정은 삭제할 수 없습니다." };
     }
-    if (newPw !== confirmPw) {
-      return { ok: false, error: "새 비밀번호가 일치하지 않습니다." };
-    }
-    list[idx] = { ...list[idx], password: newPw };
-    writeAccounts(list);
-    setAccounts(list);
+    persistAccounts(list.filter((a) => a.id !== id));
     return { ok: true };
   };
 
@@ -237,17 +231,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         loading,
         displayName,
-        isAdmin,
         accounts,
-        pendingCount,
         signIn,
         signUp,
         signOut,
-        approveUser,
-        rejectUser,
-        deleteUser,
-        refreshAccounts,
         changePassword,
+        approveAccount,
+        rejectAccount,
+        deleteAccount,
       }}
     >
       {children}

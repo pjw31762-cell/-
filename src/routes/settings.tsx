@@ -120,9 +120,9 @@ function AccountSection() {
             className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-muted-foreground"
           />
         </Field>
-        <Field label="로그인 아이디">
+        <Field label="로그인 이메일">
           <input
-            value={currentUser?.id ?? ""}
+            value={currentUser?.email ?? ""}
             readOnly
             className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-muted-foreground"
           />
@@ -160,12 +160,16 @@ function CredentialsSection() {
           <div className="mb-2 text-sm font-semibold">현재 계정</div>
           <div className="space-y-1 text-sm">
             <div className="flex gap-3">
-              <span className="w-20 text-muted-foreground">아이디</span>
-              <span className="font-medium">{currentUser?.id ?? "—"}</span>
+              <span className="w-20 text-muted-foreground">이메일</span>
+              <span className="font-medium">{currentUser?.email ?? "—"}</span>
             </div>
             <div className="flex gap-3">
               <span className="w-20 text-muted-foreground">소속 부서</span>
               <span className="font-medium">{currentUser?.dept ?? "—"}</span>
+            </div>
+            <div className="flex gap-3">
+              <span className="w-20 text-muted-foreground">권한</span>
+              <span className="font-medium">{currentUser?.role === "admin" ? "관리자" : "사용자"}</span>
             </div>
           </div>
         </div>

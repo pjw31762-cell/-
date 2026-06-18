@@ -11,8 +11,29 @@ npm run dev          # 개발 서버
 npm run build        # 프로덕션 빌드
 ```
 
-AI 스캔/보고서 기능을 사용하려면 서버 환경변수 `LOVABLE_API_KEY` 가 필요합니다.
-Supabase 공개 키는 `.env` 에 포함되어 있습니다.
+### 환경변수
+| 변수 | 용도 |
+|---|---|
+| `GOOGLE_CLOUD_API_KEY` | **PDF/이미지 OCR** — Google Cloud Vision API 키 (만족도조사지 인식) |
+| `LOVABLE_API_KEY` | 엑셀 응답 매핑 및 보고서 초안 생성(LLM) |
+| Supabase 공개 키 | `.env` 에 포함되어 있음 |
+
+> **Vercel 배포 시 환경변수 등록 필요: `GOOGLE_CLOUD_API_KEY` = (Google Cloud에서 발급한 키)**
+> Google Cloud Console → API 및 서비스 → 사용 설정에서 **Cloud Vision API** 를 켜고 API 키를 발급하세요.
+
+## 🔎 PDF/이미지 인식 — Google Cloud Vision API
+
+비용 문제로 멀티모달 LLM(Vision) 호출을 제거하고, 무료 한도가 넉넉한 **Google Cloud Vision API**(`DOCUMENT_TEXT_DETECTION`)로 교체했습니다.
+
+처리 흐름:
+1. PDF 업로드 → `pdfjs-dist` 로 페이지별 이미지(base64) 변환
+2. 각 페이지 이미지를 `https://vision.googleapis.com/v1/images:annotate` 로 전송
+3. 응답의 `fullTextAnnotation.text` 에서 전체 텍스트 추출
+4. `questions` 배열 기준으로 응답을 동적 매핑 (객관식·5점척도·주관식)
+5. Vision 응답의 `confidence` 값을 기존 AI 인식률 표시에 그대로 사용
+
+> 엑셀 업로드·데이터 검수·응답 항목 분석 화면과 전체 디자인은 변경하지 않았습니다.
+> Vision 은 OCR(텍스트 인식)이므로, 동그라미/체크 선택이 모호한 항목은 **데이터 검수** 화면에서 확인·보정하면 됩니다.
 
 ## 🔐 계정 및 권한 체계
 

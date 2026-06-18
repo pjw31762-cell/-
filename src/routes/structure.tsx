@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { settingsStore, useSettings } from "@/lib/settings-store";
-import { detectPresetFromQuestions } from "@/lib/analysis-history";
 
 export const Route = createFileRoute("/structure")({
   head: () => ({ meta: [{ title: "설문 구조 선택 · SatisAI" }] }),
@@ -80,7 +79,20 @@ const defaultChoicesFor = (label: string): string[] => {
   return ["선택 1", "선택 2", "선택 3", "선택 4"];
 };
 
-const presetA = () => ({
+type PresetKey = "standard" | "scale_subj" | "area" | "custom";
+
+// 카드별 표시 섹션 — 선택형 / 5점 척도 / 강점 / 자유 서술
+const SECTION_VISIBILITY: Record<
+  PresetKey,
+  { mc: boolean; scale: boolean; strength: boolean; subj: boolean }
+> = {
+  standard: { mc: true, scale: true, strength: true, subj: true },
+  scale_subj: { mc: false, scale: true, strength: false, subj: true },
+  area: { mc: false, scale: true, strength: false, subj: true },
+  custom: { mc: true, scale: true, strength: true, subj: true },
+};
+
+const presetStandard = () => ({
   mc: [
     { id: uid(), label: "성별", choices: null },
     { id: uid(), label: "연령", choices: null },
@@ -96,142 +108,28 @@ const presetA = () => ({
   ] as SubjItem[],
 });
 
-// 업로드된 만족도조사지 양식들을 포괄하는 프리셋 정의 ------------------------------
-type PresetBuild = {
-  mc: McItem[];
-  scale: ScaleItem[];
-  strength: McItem[];
-  subj: SubjItem[];
-};
-
-// 스마트 경진대회형 (디지털 프로그램) — 척도 세부항목/강점 보기가 표준형과 다름
-const SMART_CONTEST_SCALE = [
-  "주제/내용",
-  "퀴즈 난이도",
-  "어플 편의성",
-  "진행 방법",
-  "소요시간",
-];
-const SMART_CONTEST_STRENGTH = [
-  "디지털 기기 활용 역량 강화",
-  "시대흐름 반영주제",
-  "직원의 전문성",
-  "생활 상식 및 정보 습득력 향상",
-  "일상생활 개선/도움",
-];
-
-// 정서지원 척도형 — 인적사항 없이 문장형 11문항 단일 척도표
-const EMOTION_SCALE_ITEMS = [
-  "프로그램의 참여 시간은 적절했다",
-  "프로그램 활동 횟수는 적절했다",
-  "프로그램 강사(전문성·설명 등)에 만족한다",
-  "프로그램을 통해 삶에 활력이 생겼다",
-  "프로그램 참여를 통해 정서적 안정감이 향상되었다",
-  "오프라인 활동으로 스스로에 대한 긍정적인 마음이 생겼다",
-  "온라인 활동을 통해 참여자들과 소통이 증가했다",
-  "프로그램 참여자들과 친밀감이 향상되었다",
-  "프로그램·봉사자와의 관계를 통해 지역사회와 연결되어 있다는 느낌이 든다",
-  "향후 동일·유사한 프로그램에 다시 참여할 의향이 있다",
-  "프로그램에 대해 전반적으로 만족한다",
-];
-
-// 선배시민 교육형 (노인종합복지관협회 표준) — 강사/교육 척도 + 주관식
-const SENIOR_INSTRUCTOR_ITEMS = [
-  "강사의 준비(내용·자료) 만족도",
-  "강사의 진행(발음·속도) 만족도",
-  "강사의 태도(적극·명확) 만족도",
-];
-const SENIOR_EDU_ITEMS = [
-  "교육 내용 이해도",
-  "교육 시간 적절성",
-  "선배시민 자원봉사 도움 정도",
-];
-
-const buildStandard = (): PresetBuild => presetA();
-
-const buildSmartContest = (): PresetBuild => ({
-  mc: [
-    { id: uid(), label: "성별", choices: null },
-    { id: uid(), label: "연령", choices: null },
-    { id: uid(), label: "참여경로", choices: [...DEFAULT_PATH_CHOICES] },
-  ],
-  scale: [{ id: uid(), label: "세부만족도", items: [...SMART_CONTEST_SCALE] }],
-  strength: [{ id: uid(), label: STRENGTH_LABEL, choices: [...SMART_CONTEST_STRENGTH] }],
-  subj: [
-    { id: uid(), label: "추후 희망 주제" },
-    { id: uid(), label: "소감 및 건의사항" },
-  ],
-});
-
-const buildEmotionScale = (): PresetBuild => ({
-  mc: [],
-  scale: [{ id: uid(), label: "프로그램 만족도", items: [...EMOTION_SCALE_ITEMS] }],
-  strength: [],
-  subj: [{ id: uid(), label: "프로그램 건의사항" }],
-});
-
-const buildSeniorEdu = (): PresetBuild => ({
-  mc: [],
+const presetScaleSubj = () => ({
+  mc: [] as McItem[],
   scale: [
-    { id: uid(), label: "강사 만족도", items: [...SENIOR_INSTRUCTOR_ITEMS] },
-    { id: uid(), label: "교육 만족도", items: [...SENIOR_EDU_ITEMS] },
-  ],
-  strength: [],
+    { id: uid(), label: "세부만족도", items: [...DEFAULT_SCALE_ROWS] },
+  ] as ScaleItem[],
+  strength: [] as McItem[],
+  subj: [{ id: uid(), label: "건의사항" }] as SubjItem[],
+});
+
+const presetArea = () => ({
+  mc: [] as McItem[],
+  scale: [
+    { id: uid(), label: "강사 만족도", items: [""] },
+    { id: uid(), label: "교육 만족도", items: [""] },
+  ] as ScaleItem[],
+  strength: [] as McItem[],
   subj: [
-    { id: uid(), label: "강사에 대해 가장 만족한 부분" },
-    { id: uid(), label: "교육에서 가장 만족한 부분" },
-    { id: uid(), label: "기타 제안 및 느낀 점" },
-  ],
+    { id: uid(), label: "강사에 대해 가장 만족한 부분은?" },
+    { id: uid(), label: "교육에서 가장 만족한 부분은?" },
+    { id: uid(), label: "건의사항 및 느낀 점" },
+  ] as SubjItem[],
 });
-
-const buildCustom = (): PresetBuild => ({
-  mc: [
-    { id: uid(), label: "성별", choices: null },
-    { id: uid(), label: "연령", choices: null },
-  ],
-  scale: [{ id: uid(), label: "세부만족도", items: [...DEFAULT_SCALE_ROWS] }],
-  strength: [makeStrengthItem()],
-  subj: [{ id: uid(), label: "추후 희망 주제" }],
-});
-
-type PresetDef = {
-  id: string;
-  title: string;
-  subtitle: string;
-  tag?: string;
-  build: () => PresetBuild;
-};
-
-const PRESETS: PresetDef[] = [
-  {
-    id: "standard",
-    title: "표준 특강형",
-    subtitle: "성별·연령·참여경로 + 5점 척도 + 강점 + 주관식 2",
-    tag: "스마트에이징특강 등 일반 만족도조사",
-    build: buildStandard,
-  },
-  {
-    id: "smartContest",
-    title: "스마트 경진대회형",
-    subtitle: "인적사항 + 척도(퀴즈·어플 등) + 강점 + 주관식 2",
-    tag: "스마트 경진대회 등 디지털 프로그램",
-    build: buildSmartContest,
-  },
-  {
-    id: "emotionScale",
-    title: "정서지원 척도형",
-    subtitle: "문장형 11문항 단일 척도 + 건의사항 (인적사항 없음)",
-    tag: "정서지원·원예 등 척도 중심 설문",
-    build: buildEmotionScale,
-  },
-  {
-    id: "seniorEdu",
-    title: "선배시민 교육형",
-    subtitle: "강사·교육 척도 + 주관식 (인적사항 없음)",
-    tag: "노인종합복지관협회 표준 설문",
-    build: buildSeniorEdu,
-  },
-];
 
 function StructurePage() {
   const session = useSurveySession();
@@ -265,22 +163,14 @@ function StructurePage() {
           subj.push({ id: uid(), label: q.text });
         }
       }
-      // 인적사항(객관식)이 있는 표준형인데 강점 문항이 없다면 기본값으로 추가
-      if (strength.length === 0 && mc.length > 0) strength.push(makeStrengthItem());
-      // 표준형(구조 A)만 자동 감지, 그 외 양식은 직접 선택으로 표시
-      const preset = detectPresetFromQuestions(qs);
-      return {
-        selected: preset === "A" ? "standard" : "custom",
-        mc,
-        scale,
-        strength,
-        subj,
-      };
+      // 템플릿/세션에서 불러온 경우 — 사용자가 직접 편집한 상태로 간주
+      return { selected: "custom" as PresetKey, mc, scale, strength, subj };
     }
-    return { selected: "standard", ...buildStandard() };
+    const a = presetStandard();
+    return { selected: "standard" as PresetKey, ...a };
   })();
 
-  const [selected, setSelected] = useState<string>(init.selected);
+  const [selected, setSelected] = useState<PresetKey>(init.selected);
   const [mcs, setMcs] = useState<McItem[]>(init.mc);
   const [scales, setScales] = useState<ScaleItem[]>(init.scale);
   const [strengths, setStrengths] = useState<McItem[]>(init.strength);
@@ -290,14 +180,29 @@ function StructurePage() {
     appSettings.department || session.department || "평생교육팀",
   );
 
-  const applyPreset = (k: string) => {
+  const applyPreset = (k: PresetKey) => {
     setSelected(k);
-    const def = PRESETS.find((p) => p.id === k);
-    const built = def ? def.build() : buildCustom();
-    setMcs(built.mc);
-    setScales(built.scale);
-    setStrengths(built.strength);
-    setSubjs(built.subj);
+    let p;
+    if (k === "standard") p = presetStandard();
+    else if (k === "scale_subj") p = presetScaleSubj();
+    else if (k === "area") p = presetArea();
+    else {
+      p = {
+        mc: [
+          { id: uid(), label: "성별", choices: null },
+          { id: uid(), label: "연령", choices: null },
+        ] as McItem[],
+        scale: [
+          { id: uid(), label: "세부만족도", items: [...DEFAULT_SCALE_ROWS] },
+        ] as ScaleItem[],
+        strength: [makeStrengthItem()] as McItem[],
+        subj: [{ id: uid(), label: "추후 희망 주제" }] as SubjItem[],
+      };
+    }
+    setMcs(p.mc);
+    setScales(p.scale);
+    setStrengths(p.strength);
+    setSubjs(p.subj);
   };
 
   // user edits → switch selected to "custom"
@@ -406,9 +311,9 @@ function StructurePage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Step 0"
+        eyebrow="1단계"
         title="설문지 구조 선택"
-        description="분석할 설문지의 양식을 선택하세요. 표준 특강형·스마트 경진대회형·정서지원 척도형·선배시민 교육형 등 자주 쓰는 양식을 기본 제공하며, AI 가 선택한 구조에 맞춰 응답 위치를 정확히 매칭합니다."
+        description="아래에서 설문지 형태를 선택하세요. 선택한 형태에 맞게 응답 내용을 자동으로 분석합니다."
       />
       <p className="-mt-4 mb-6 flex items-start gap-1.5 text-sm text-slate-500">
         <span aria-hidden>💡</span>
@@ -452,29 +357,32 @@ function StructurePage() {
         </div>
       </div>
 
-      <p className="mb-3 text-sm font-medium text-foreground">
-        업로드한 설문지 양식에 맞는 구조를 선택하세요.
-        <span className="ml-1 font-normal text-muted-foreground">
-          (선택 후에도 아래에서 자유롭게 편집할 수 있습니다)
-        </span>
-      </p>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {PRESETS.map((p) => (
-          <PresetCard
-            key={p.id}
-            icon={<ListChecks className="h-5 w-5" />}
-            title={p.title}
-            subtitle={p.subtitle}
-            tag={p.tag}
-            active={selected === p.id}
-            onClick={() => applyPreset(p.id)}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <PresetCard
+          icon={<ListChecks className="h-5 w-5" />}
+          title="표준형"
+          subtitle="선택형 3문항 + 척도 + 강점 + 서술"
+          active={selected === "standard"}
+          onClick={() => applyPreset("standard")}
+        />
+        <PresetCard
+          icon={<ListChecks className="h-5 w-5" />}
+          title="척도·서술형"
+          subtitle="만족도 척도 + 건의사항"
+          active={selected === "scale_subj"}
+          onClick={() => applyPreset("scale_subj")}
+        />
+        <PresetCard
+          icon={<ListChecks className="h-5 w-5" />}
+          title="영역별 평가형"
+          subtitle="강사·교육 영역별 척도 + 서술"
+          active={selected === "area"}
+          onClick={() => applyPreset("area")}
+        />
         <PresetCard
           icon={<SlidersHorizontal className="h-5 w-5" />}
-          title="직접 선택 구조"
+          title="직접 구성하기"
           subtitle="문항을 자유롭게 추가·편집"
-          tag="위 양식에 없는 새 설문 직접 구성"
           active={selected === "custom"}
           onClick={() => applyPreset("custom")}
         />
@@ -482,7 +390,8 @@ function StructurePage() {
 
       {/* 통합 편집 영역 */}
       <div className="mt-8 space-y-6">
-        <EditorSection title="객관식 문항" countLabel={`${mcs.length}문항`}>
+        {SECTION_VISIBILITY[selected].mc && (
+        <EditorSection title="선택형 문항" countLabel={`${mcs.length}문항`}>
           <div className="space-y-2">
             {mcs.map((m, i) => (
               <McRow
@@ -512,7 +421,9 @@ function StructurePage() {
             }}
           />
         </EditorSection>
+        )}
 
+        {SECTION_VISIBILITY[selected].scale && (
         <EditorSection title="5점 척도 문항" countLabel={`${scales.length}문항`}>
           <div className="space-y-2">
             {scales.map((s, i) => (
@@ -543,7 +454,9 @@ function StructurePage() {
             }}
           />
         </EditorSection>
+        )}
 
+        {SECTION_VISIBILITY[selected].strength && (
         <EditorSection title="강점 문항" countLabel={`${strengths.length}문항`}>
           <div className="space-y-2">
             {strengths.map((m, i) => (
@@ -580,8 +493,10 @@ function StructurePage() {
             }}
           />
         </EditorSection>
+        )}
 
-        <EditorSection title="주관식 문항" countLabel={`${subjs.length}문항`}>
+        {SECTION_VISIBILITY[selected].subj && (
+        <EditorSection title="자유 서술 문항" countLabel={`${subjs.length}문항`}>
           <div className="space-y-2">
             {subjs.map((s, i) => (
               <SubjRow
@@ -608,6 +523,7 @@ function StructurePage() {
             }}
           />
         </EditorSection>
+        )}
       </div>
 
       <div className="mt-8 flex items-center justify-between rounded-2xl border border-border bg-card p-5 dark:bg-gray-800 dark:border-gray-600">
@@ -623,7 +539,7 @@ function StructurePage() {
             disabled={totalCount === 0 || hasAnyDup}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm font-medium hover:bg-secondary disabled:opacity-40 dark:bg-gray-600 dark:text-gray-100 dark:border-gray-500"
           >
-            <Save className="h-4 w-4" /> 이 구조를 템플릿으로 저장
+            <Save className="h-4 w-4" /> 이 구조 저장해두기
           </button>
           <div className="flex flex-col items-end gap-1">
             {hasAnyDup && (
@@ -636,7 +552,7 @@ function StructurePage() {
               disabled={totalCount === 0 || hasAnyDup}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[var(--shadow-soft)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              구조 확정 · 업로드로 이동 <ArrowRight className="h-4 w-4" />
+              완료 → 다음 단계로 <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -879,7 +795,7 @@ function McRow({
             onClick={() => setShowChoices((v) => !v)}
             className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary dark:bg-gray-700 dark:border-gray-500 dark:text-gray-200"
           >
-            선택지
+            선택지 편집
             {showChoices ? (
               <ChevronDown className="h-3.5 w-3.5" />
             ) : (

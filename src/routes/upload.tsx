@@ -52,6 +52,8 @@ const readAsArrayBuffer = (f: File) =>
   });
 
 // PDF 페이지 → 이미지 dataURL 배열로 분리 (브라우저에서만 동작)
+// Google Cloud Vision API 는 페이지별 이미지(base64)를 입력으로 받으므로
+// 업로드된 PDF 를 페이지 단위 이미지로 변환한다.
 let pdfjsCache: any | null = null;
 async function loadPdfjs(): Promise<any> {
   if (pdfjsCache) return pdfjsCache;
@@ -71,7 +73,6 @@ async function loadPdfjs(): Promise<any> {
   return pdfjs;
 }
 
-// PDF 페이지 → 이미지 dataURL 배열로 분리 (브라우저에서만 동작)
 async function splitPdfToImages(file: File): Promise<{ pageNum: number; dataUrl: string; label: string }[]> {
   const pdfjs = await loadPdfjs();
   const buf = await file.arrayBuffer();
@@ -95,7 +96,6 @@ async function splitPdfToImages(file: File): Promise<{ pageNum: number; dataUrl:
       dataUrl: canvas.toDataURL("image/jpeg", 0.9),
       label: `${file.name} — ${i}페이지`,
     });
-    // 메모리 정리
     canvas.width = 0;
     canvas.height = 0;
     page.cleanup?.();
@@ -148,7 +148,6 @@ function UploadPage() {
     type Unit =
       | { kind: "image"; label: string; source: string; dataUrl: string; mediaType: string; itemIdx: number }
       | { kind: "pdf-page"; label: string; source: string; dataUrl: string; itemIdx: number }
-      | { kind: "pdf-file"; label: string; source: string; dataUrl: string; itemIdx: number }
       | { kind: "excel"; label: string; source: string; text: string; itemIdx: number };
     const queue = items.map((i) => ({ ...i }));
     const units: Unit[] = [];
@@ -170,29 +169,13 @@ function UploadPage() {
           it.status = "scanning";
           it.message = "PDF 페이지 분리 중...";
           setItems([...queue]);
-          try {
-            const pages = await splitPdfToImages(it.file);
-            if (!pages.length) throw new Error("페이지를 찾을 수 없습니다");
-            for (const p of pages) {
-              units.push({
-                kind: "pdf-page",
-                label: p.label,
-                source: p.label,
-                dataUrl: p.dataUrl,
-                itemIdx: i,
-              });
-            }
-          } catch (pdfErr) {
-            // 페이지 렌더링 실패 시 PDF 원본을 그대로 AI 에 전달 (폴백)
-            console.warn("PDF 페이지 분리 실패, 원본 직접 전송으로 폴백합니다.", pdfErr);
-            it.message = "PDF 원본 분석 중...";
-            setItems([...queue]);
-            const dataUrl = await readAsDataUrl(it.file);
+          const pages = await splitPdfToImages(it.file);
+          for (const p of pages) {
             units.push({
-              kind: "pdf-file",
-              label: it.file.name,
-              source: it.file.name,
-              dataUrl,
+              kind: "pdf-page",
+              label: p.label,
+              source: p.label,
+              dataUrl: p.dataUrl,
               itemIdx: i,
             });
           }
@@ -235,8 +218,6 @@ function UploadPage() {
           payload = { kind: "image", dataUrl: u.dataUrl, mediaType: u.mediaType };
         } else if (u.kind === "pdf-page") {
           payload = { kind: "image", dataUrl: u.dataUrl, mediaType: "image/jpeg" };
-        } else if (u.kind === "pdf-file") {
-          payload = { kind: "pdf", dataUrl: u.dataUrl };
         } else {
           payload = { kind: "excel", text: u.text };
         }
@@ -309,7 +290,7 @@ function UploadPage() {
       <PageHeader
         eyebrow="Step 1"
         title="AI 스캔 업로드"
-        description="엑셀(.xlsx/.xls/.csv) · PDF · 사진(jpg/png) 형식의 설문지를 업로드할 수 있습니다."
+        description="엑셀(.xlsx/.xls/.csv) 형식의 설문지를 업로드할 수 있습니다."
         actions={
           <button
             onClick={() => {

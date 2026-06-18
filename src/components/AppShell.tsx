@@ -1,5 +1,5 @@
 import { Link, useRouterState, useRouter } from "@tanstack/react-router";
-import { LayoutDashboard, ScanLine, ClipboardCheck, BarChart3, FileText, Settings, ListChecks, LogOut, Sun, Moon, FolderOpen, ChevronLeft, UserCog } from "lucide-react";
+import { LayoutDashboard, ScanLine, ClipboardCheck, BarChart3, FileText, Settings, ListChecks, LogOut, Sun, Moon, FolderOpen, ChevronLeft, UserCheck } from "lucide-react";
 import { type ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSettings } from "@/lib/settings-store";
@@ -86,13 +86,15 @@ function PageNav() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { displayName, signOut, isAdmin, pendingCount } = useAuth();
+  const { displayName, signOut, currentUser, accounts } = useAuth();
   const settings = useSettings();
   const department = settings.department;
   const name = settings.userName?.trim() || displayName;
-  const roleLabel = isAdmin ? "관리자" : "사용자";
   const theme = useTheme();
   const isDark = theme === "dark";
+  const isAdmin = currentUser?.role === "admin";
+  const pendingCount = accounts.filter((a) => a.status === "pending").length;
+  const roleLabel = currentUser?.role === "admin" ? "관리자" : "사용자";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -165,26 +167,27 @@ export function AppShell({ children }: { children: ReactNode }) {
               })}
             </div>
           ))}
-
           {isAdmin && (
             <div>
               <div className="mt-4 mb-1 px-3">
                 <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                  <span className="text-xs text-slate-400 font-medium">관리자</span>
+                  <span className="text-xs text-slate-400 font-medium">관리</span>
                 </div>
               </div>
               <Link
                 to="/users"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${
+                className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${
                   pathname === "/users"
                     ? "bg-primary-soft text-accent-foreground font-medium"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}
               >
-                <UserCog className="h-4 w-4" />
-                <span className="flex-1">사용자 승인 관리</span>
+                <span className="flex items-center gap-3">
+                  <UserCheck className="h-4 w-4" />
+                  사용자 승인 관리
+                </span>
                 {pendingCount > 0 && (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">
+                  <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
                     {pendingCount}
                   </span>
                 )}
@@ -220,7 +223,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <Link
             to="/settings"
-            search={{ tab: undefined }}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-secondary"
           >
             <Settings className="h-4 w-4" />

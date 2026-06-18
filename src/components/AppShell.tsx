@@ -223,6 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <Link
             to="/settings"
+            search={{ tab: undefined }}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-secondary"
           >
             <Settings className="h-4 w-4" />

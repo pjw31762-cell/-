@@ -81,6 +81,27 @@ const defaultChoicesFor = (label: string): string[] => {
 
 type PresetKey = "standard" | "scale_subj" | "area" | "custom";
 
+// 척도·서술형(정서지원 등) 기본 평가항목 — 문장형 만족도 진술
+const STATEMENT_SCALE_ITEMS = [
+  "프로그램 참여 시간(횟수)은 적절했다",
+  "프로그램 진행(강사)에 만족한다",
+  "프로그램을 통해 도움·만족감을 얻었다",
+  "향후 동일·유사 프로그램에 다시 참여할 의향이 있다",
+  "프로그램에 대해 전반적으로 만족한다",
+];
+
+// 영역별 평가형(선배시민 필수교육 등) 기본 평가항목
+const AREA_INSTRUCTOR_ITEMS = [
+  "강사의 준비(내용·자료)",
+  "강사의 진행(발음·속도)",
+  "강사의 태도(적극·명확)",
+];
+const AREA_EDU_ITEMS = [
+  "교육 내용 이해도",
+  "교육 시간 적절성",
+  "자원봉사(활동) 도움 정도",
+];
+
 // 카드별 표시 섹션 — 선택형 / 5점 척도 / 강점 / 자유 서술
 const SECTION_VISIBILITY: Record<
   PresetKey,
@@ -111,7 +132,7 @@ const presetStandard = () => ({
 const presetScaleSubj = () => ({
   mc: [] as McItem[],
   scale: [
-    { id: uid(), label: "세부만족도", items: [...DEFAULT_SCALE_ROWS] },
+    { id: uid(), label: "프로그램 만족도", items: [...STATEMENT_SCALE_ITEMS] },
   ] as ScaleItem[],
   strength: [] as McItem[],
   subj: [{ id: uid(), label: "건의사항" }] as SubjItem[],
@@ -120,8 +141,8 @@ const presetScaleSubj = () => ({
 const presetArea = () => ({
   mc: [] as McItem[],
   scale: [
-    { id: uid(), label: "강사 만족도", items: [""] },
-    { id: uid(), label: "교육 만족도", items: [""] },
+    { id: uid(), label: "강사 만족도", items: [...AREA_INSTRUCTOR_ITEMS] },
+    { id: uid(), label: "교육 만족도", items: [...AREA_EDU_ITEMS] },
   ] as ScaleItem[],
   strength: [] as McItem[],
   subj: [
@@ -361,21 +382,24 @@ function StructurePage() {
         <PresetCard
           icon={<ListChecks className="h-5 w-5" />}
           title="표준형"
-          subtitle="선택형 3문항 + 척도 + 강점 + 서술"
+          subtitle="성별·연령·참여경로 + 5점 척도 + 강점 + 주관식 2"
+          tag="예: 스마트에이징특강, VR 체험 등 (척도 항목만 수정해 사용)"
           active={selected === "standard"}
           onClick={() => applyPreset("standard")}
         />
         <PresetCard
           icon={<ListChecks className="h-5 w-5" />}
           title="척도·서술형"
-          subtitle="만족도 척도 + 건의사항"
+          subtitle="인적사항 없이 문장형 만족도 척도 + 건의사항"
+          tag="예: 정서지원사업 등 척도 중심 설문"
           active={selected === "scale_subj"}
           onClick={() => applyPreset("scale_subj")}
         />
         <PresetCard
           icon={<ListChecks className="h-5 w-5" />}
           title="영역별 평가형"
-          subtitle="강사·교육 영역별 척도 + 서술"
+          subtitle="강사·교육 영역별 척도 + 영역별 주관식"
+          tag="예: 선배시민 필수교육 등 영역 구분 설문"
           active={selected === "area"}
           onClick={() => applyPreset("area")}
         />
@@ -383,6 +407,7 @@ function StructurePage() {
           icon={<SlidersHorizontal className="h-5 w-5" />}
           title="직접 구성하기"
           subtitle="문항을 자유롭게 추가·편집"
+          tag="위 양식에 없는 새 설문 직접 구성"
           active={selected === "custom"}
           onClick={() => applyPreset("custom")}
         />
